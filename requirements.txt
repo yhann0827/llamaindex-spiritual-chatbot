@@ -3,3 +3,4 @@ openai
 llama-index
 nltk
 bert-score
+llama-index-retrievers-bm25
