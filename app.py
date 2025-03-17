@@ -20,7 +20,19 @@ OpenAI.api_key = st.secrets["OPENAI_API_KEY"]
 Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0.7)
 Settings.embed_model = OpenAIEmbedding(model="text-embedding-ada-002")
 
-def detect_emotion(user_input):
+if "base_prompt_template" not in st.session_state:
+    st.session_state["base_prompt_template"] = (
+        "你是一位來自往生世界的嚮導，請幫助使用者理解這些訊息。\n\n"
+        "請直接以 **第一人稱** 來說話，確保語氣自然且情感真摯。\n"
+        "請將以下訊息融合成一段流暢且自然的回應，\n"
+        "確保不提及具體的情緒分類名稱，只讓內容傳遞出應有的情感。\n"
+        "請確保完整保留所有內容，不要省略、總結、或加入額外解釋。\n\n"
+        "請用這些內容來回應使用者\n"
+        "{context_str}\n"
+        "請根據上述內容，自然地表達你的回應"
+    )
+
+def detect_emotion(user_input,):
     prompt = f"""請根據以下文字判斷情緒，可以返回多個情緒名稱（擔心, 恐懼, 解脫, 自責, 傷心, 愛, 面對, 繼承, 再見, 懺悔, 寬恕, 放下, 罪惡感, 隱瞞, 合一, 封閉, 請讓我走, 原諒, 思念, 愛, 永恆, 
             孤單, 失落, 存在, 思念, 靈魂連結, 溝通, 溝通, 罣礙, 怨念, 願望, 圓滿, 改變, 執著, 憂心, 愛的延續, 情執, 前世今生, 角色扮演, 輪迴, 轉世, 告別, 感恩, 前世有約, 愛的承諾, 緣起緣滅, 光, 天堂, 榮耀,
             懺悔與感悟, 感恩與贈禮, 安慰與歸屬, 圓滿與祝福, 光明與愛, 解脫與無所不在），若適用請以逗號分隔：
@@ -124,16 +136,7 @@ def generate_response(index, user_input, model, temperature, max_tokens, top_p, 
     detected_emotion = detect_emotion(user_input)
     messages=retrieve_message_from_dataset(index, detected_emotion)
     context_str='\n'.join([f"{title}:{text}" for text, title in messages]) if messages else "No messages found"
-    chat_prompt = PromptTemplate(
-        "你是一位來自往生世界的嚮導，請幫助使用者理解這些訊息。\n\n"
-        "請直接以 **第一人稱** 來說話，確保語氣自然且情感真摯。\n"
-        "請將以下訊息融合成一段流暢且自然的回應，\n"
-        "確保不提及具體的情緒分類名稱，只讓內容傳遞出應有的情感。\n"
-        "請確保完整保留所有內容，不要省略、總結、或加入額外解釋。\n\n"
-        "===請用這些內容來回應使用者===\n"
-        "{context_str}\n"
-        "===請根據上述內容，自然地表達你的回應==="
-    )
+
 
     print("context str", context_str)
     llm = OpenAI(
@@ -145,7 +148,7 @@ def generate_response(index, user_input, model, temperature, max_tokens, top_p, 
     )
     chat_engine = index.as_chat_engine(
         chat_mode=ChatMode.CONTEXT,
-        system_prompt=chat_prompt.format(context_str=context_str),
+        system_prompt=st.session_state["base_prompt_template"].format(context_str=context_str),
         llm=llm
     )
     response = chat_engine.chat(user_input)
@@ -180,6 +183,14 @@ def main():
     top_p = st.sidebar.number_input("Top-p (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=1.0, step=0.01)
     frequency_penalty = st.sidebar.number_input("Frequency Penalty (-2.0 to 2.0)", min_value=-2.0, max_value=2.0, value=0.0, step=0.1)
     
+    st.session_state["base_prompt_template"] = st.sidebar.text_area(
+        "Prompt Template",
+        value=st.session_state["base_prompt_template"],
+        height=300
+    )
+    # st.session_state["base_prompt_template"] = PromptTemplate(template=st.session_state["base_prompt_template"])
+
+
     if "messages" not in st.session_state:
         st.session_state["messages"]=[{"role": "assistant", "content": "你好！有什么我可以帮助你的吗？"}]
     
