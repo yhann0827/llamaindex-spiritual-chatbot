@@ -39,7 +39,7 @@ def detect_emotion(user_input,):
             {user_input}"""
 
     response = openai.chat.completions.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[
             {"role":"assistant", "content":"你是一個能分析情緒的助手"},
             {"role":"user", "content":prompt}]
@@ -63,6 +63,26 @@ def load_data():
         index=VectorStoreIndex.from_documents(docs)
         return index
 
+# def retrieve_message_from_dataset(index, emotion):
+#     if isinstance(emotion, str):
+#         query = emotion.strip()
+#         emotion_list = [emotion.strip()]
+#     elif isinstance(emotion, list):
+#         query = " ".join([e.strip() for e in emotion])  
+#         emotion_list = [e.strip() for e in emotion]
+#     else:
+#         query = "根据上述用户的情绪，给他适当的慰籍和开导。" 
+#         emotion_list = []
+    
+#     # Retrieve nodes using the emotion-based query
+#     bm25_retriever = BM25Retriever.from_defaults(index, similarity_top_k=5)
+
+#     nodes = bm25_retriever.retrieve(query)
+#     print("Retrieved Nodes:", [(node.text, node.metadata) for node in nodes])
+#     matching_nodes = [node for node in nodes if node.metadata["emotion"] in emotion_list]
+#     print("Matching Nodes:", [(node.text, node.metadata) for node in matching_nodes])
+#     return [(node.text, node.metadata["title"]) for node in matching_nodes]
+
 def retrieve_message_from_dataset(index, emotion):
     if isinstance(emotion, str):
         query = emotion.strip()
@@ -73,72 +93,18 @@ def retrieve_message_from_dataset(index, emotion):
     else:
         query = "根据上述用户的情绪，给他适当的慰籍和开导。" 
         emotion_list = []
-    
-    # Retrieve nodes using the emotion-based query
-    bm25_retriever = BM25Retriever.from_defaults(index, similarity_top_k=5)
-
-    nodes = bm25_retriever.retrieve(query)
-    print("Retrieved Nodes:", [(node.text, node.metadata) for node in nodes])
+    retriever = VectorIndexRetriever(
+        index=index,
+        similarity_top_k=5,
+    )
+    nodes = retriever.retrieve(query)
     matching_nodes = [node for node in nodes if node.metadata["emotion"] in emotion_list]
-    print("Matching Nodes:", [(node.text, node.metadata) for node in matching_nodes])
-    
     return [(node.text, node.metadata["title"]) for node in matching_nodes]
-
-# def evaluate_faithfulness(response, contexts):
-#     if isinstance(response, AgentChatResponse):
-#         response = response.response  # Extract string content
-
-#     if response is None or response == "":
-#         raise ValueError("Response must be a non-empty string.")
-    
-#     if isinstance(contexts, str):  
-#         contexts = [contexts]  # Convert a single string into a list
-    
-#     print(f"Response Type: {type(response)}, Value: {response}")
-#     print(f"Contexts Type: {type(contexts)}, Value: {contexts}")
-
-#     evaluator = FaithfulnessEvaluator()
-
-#     try:
-#         evaluation_score = evaluator.evaluate(response=response, contexts=contexts)
-#         print("Score:", evaluation_score)
-#         return evaluation_score
-#     except ValueError as e:
-#         print(f"Evaluation failed: {e}")
-#         raise  # Re-raise the error for debugging
-
-def evaluate_response(response, contexts):
-    if isinstance(response, AgentChatResponse):
-        response = response.response
-
-    if response is None or response == "":
-        raise ValueError("Response must be a non-empty string.")
-    
-    if isinstance(contexts, str):  
-        contexts = [contexts] 
-
-    P, R, F1 = score([response], contexts, lang="zh", rescale_with_baseline=True)
-    
-    scores = {
-        "Precision": P.item(),
-        "Recall": R.item(),
-        "F1 Score": F1.item(),
-        "Faithfulness": F1.item(),  # Faithfulness (similar to F1)
-        "Relevance": R.item(),  # Recall represents how much of the reference is covered
-        "Coherence": P.item(),  # Precision represents how relevant the response is to the reference
-        "Fluency": F1.item()  # F1 often aligns with fluency in BERTScore
-    }
-
-    print("Evaluation Scores:", scores)
-    return scores
 
 def generate_response(index, user_input, model, temperature, max_tokens, top_p, frequency_penalty):
     detected_emotion = detect_emotion(user_input)
     messages=retrieve_message_from_dataset(index, detected_emotion)
     context_str='\n'.join([f"{title}:{text}" for text, title in messages]) if messages else "No messages found"
-
-
-    print("context str", context_str)
     llm = OpenAI(
         model=model,
         temperature=temperature,
@@ -152,18 +118,18 @@ def generate_response(index, user_input, model, temperature, max_tokens, top_p, 
         llm=llm
     )
     response = chat_engine.chat(user_input)
-    evaluation_scores=evaluate_response(response=response, contexts=context_str)
-    data.append({
-        "Query": user_input,
-        "Response": response,
-        "Context": context_str,
-        "Faithfulness": evaluation_scores["Faithfulness"],
-        "Relevance": evaluation_scores["Relevance"],
-        "Coherence": evaluation_scores["Coherence"],
-        "Fluency": evaluation_scores["Fluency"]
-    })
-    df=pd.DataFrame(data)
-    df.to_csv("evaluation.csv", mode='a', index=False, header=not os.path.exists("evaluation.csv"))
+    # evaluation_scores=evaluate_response(response=response, contexts=context_str)
+    # data.append({
+    #     "Query": user_input,
+    #     "Response": response,
+    #     "Context": context_str,
+    #     "Faithfulness": evaluation_scores["Faithfulness"],
+    #     "Relevance": evaluation_scores["Relevance"],
+    #     "Coherence": evaluation_scores["Coherence"],
+    #     "Fluency": evaluation_scores["Fluency"]
+    # })
+    # df=pd.DataFrame(data)
+    # df.to_csv("evaluation.csv", mode='a', index=False, header=not os.path.exists("evaluation.csv"))
     return response
 
 def main():
@@ -174,9 +140,9 @@ def main():
 
     if st.sidebar.button("Reset Chat"):
         st.session_state["messages"]=[{"role":"assistant", "content":"你好！有什么我可以帮助你的吗？"}]
-        model = st.sidebar.selectbox("Choose AI Model", ["gpt-4.5-preview", "gpt-4o", "chatgpt-4o-latest"])
+        model = st.sidebar.selectbox("Choose AI Model", ["gpt-3.5-turbo， gpt-4o", "chatgpt-4o-latest"])
 
-    model = st.sidebar.selectbox("Choose AI Model", ["gpt-4o", "chatgpt-4o-latest"])
+    model = st.sidebar.selectbox("Choose AI Model", ["gpt-3.5-turbo", "gpt-4o", "chatgpt-4o-latest"])
     st.sidebar.markdown("### ⚙️Model Parameters")
     temperature = st.sidebar.number_input("Temperature (0.0 - 1.0)", min_value=0.0, max_value=1.0, value=0.7, step=0.01)
     max_tokens = st.sidebar.number_input("Max Tokens (50 - 4096)", min_value=50, max_value=4096, value=500, step=10)
@@ -188,9 +154,6 @@ def main():
         value=st.session_state["base_prompt_template"],
         height=300
     )
-    # st.session_state["base_prompt_template"] = PromptTemplate(template=st.session_state["base_prompt_template"])
-
-
     if "messages" not in st.session_state:
         st.session_state["messages"]=[{"role": "assistant", "content": "你好！有什么我可以帮助你的吗？"}]
     
@@ -202,8 +165,13 @@ def main():
         st.session_state.messages.append({'role':'user', 'content':user_input})
         st.chat_message('user').markdown(user_input)
     
-        response = generate_response(index, user_input,  model, temperature, max_tokens, top_p, frequency_penalty)
-        st.chat_message('assistant').markdown(response)
+        with st.chat_message('assistant'):
+            message_placeholder = st.empty()
+            
+            with st.spinner("正在思考中..."):
+                response = generate_response(index, user_input, model, temperature, max_tokens, top_p, frequency_penalty)
+            
+            message_placeholder.markdown(response)
         st.session_state.messages.append({'role':'assistant', 'content':response})
         
 
